@@ -1,14 +1,20 @@
 /*
- * CleanSlate Protocol - Playground / Converter Page
+ * CleanSlate Protocol - CSP Playground / Converter Page (v0.2)
+ * 
+ * v0.2 Rewrite:
+ * - Integrated pdf-engine.ts for structure-aware PDF parsing
+ * - Font-size based heading detection with hierarchical levels
+ * - Spatial table detection with column alignment
+ * - Line-break repair, CJK-Latin spacing, OCR artifact cleanup
+ * - Quality metrics display (processing time, tables detected, language)
+ * 
  * Design: Wabi-Sabi + Swiss Internationalism
- * Layout: Split view - left dropzone, right output with CSP/Markdown toggle
- * Now outputs CSP (CleanSlate Protocol) structured format alongside Markdown
+ * Layout: Split view - left dropzone/file list, right output with CSP/Markdown/Raw toggle
  */
 
 import { useState, useCallback, useRef } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -28,7 +34,12 @@ import {
   Layers,
   Shield,
   Hash,
+  Clock,
+  BarChart3,
+  Globe,
+  Zap,
 } from "lucide-react";
+import { convertPdfToMarkdownV2, type ParseResult } from "@/lib/pdf-engine";
 
 // ─── File type mapping ───
 const FILE_TYPE_MAP: Record<string, { icon: typeof FileText; label: string }> = {
@@ -106,47 +117,56 @@ interface CSPOutput {
       timestamp: string;
     };
   };
+  engine: {
+    version: string;
+    processing_time_ms: number;
+    tables_detected: number;
+    total_lines: number;
+  };
 }
 
 // ─── Simple entity extraction ───
 function extractEntities(text: string): Array<{ type: string; value: string }> {
   const entities: Array<{ type: string; value: string }> = [];
-  // Dates
   const datePatterns = text.match(/\b\d{4}[-/]\d{1,2}[-/]\d{1,2}\b/g);
-  if (datePatterns) datePatterns.slice(0, 3).forEach((d) => entities.push({ type: "date", value: d }));
-  // Currency
-  const currencyPatterns = text.match(/\$[\d,]+\.?\d*/g);
-  if (currencyPatterns) currencyPatterns.slice(0, 3).forEach((c) => entities.push({ type: "currency", value: c }));
-  // Emails
+  if (datePatterns) datePatterns.slice(0, 5).forEach((d) => entities.push({ type: "date", value: d }));
+  const currencyPatterns = text.match(/[\$€£¥]\s?[\d,]+\.?\d*/g);
+  if (currencyPatterns) currencyPatterns.slice(0, 5).forEach((c) => entities.push({ type: "currency", value: c }));
   const emailPatterns = text.match(/[\w.-]+@[\w.-]+\.\w+/g);
   if (emailPatterns) emailPatterns.slice(0, 3).forEach((e) => entities.push({ type: "email", value: e }));
-  // URLs
   const urlPatterns = text.match(/https?:\/\/[^\s)]+/g);
   if (urlPatterns) urlPatterns.slice(0, 3).forEach((u) => entities.push({ type: "url", value: u }));
-  // Percentages
-  const pctPatterns = text.match(/\d+\.?\d*%/g);
-  if (pctPatterns) pctPatterns.slice(0, 3).forEach((p) => entities.push({ type: "percentage", value: p }));
+  const pctPatterns = text.match(/\d+\.?\d*\s?%/g);
+  if (pctPatterns) pctPatterns.slice(0, 5).forEach((p) => entities.push({ type: "percentage", value: p }));
+  // Chinese currency
+  const cnyPatterns = text.match(/[\d,]+\.?\d*\s?[万亿元]/g);
+  if (cnyPatterns) cnyPatterns.slice(0, 5).forEach((c) => entities.push({ type: "currency_cny", value: c }));
   return entities;
 }
 
 // ─── Semantic role detection ───
 function detectSemanticRole(text: string, heading: string): string {
   const lower = (heading + " " + text).toLowerCase();
-  if (/abstract|summary|overview|executive/.test(lower)) return "summary";
-  if (/introduction|background|context/.test(lower)) return "introduction";
-  if (/conclusion|findings|result/.test(lower)) return "conclusion";
-  if (/method|approach|implementation/.test(lower)) return "methodology";
-  if (/table|data|figure|chart/.test(lower)) return "data_table";
-  if (/reference|bibliography|citation/.test(lower)) return "references";
-  if (/appendix|supplement/.test(lower)) return "appendix";
-  if (/contract|agreement|terms|clause/.test(lower)) return "legal_clause";
-  if (/price|cost|revenue|financial|budget/.test(lower)) return "financial_data";
-  if (/code|function|class|import/.test(lower)) return "code_block";
+  if (/abstract|summary|overview|executive|摘要|概述|总结/.test(lower)) return "summary";
+  if (/introduction|background|context|引言|背景|前言/.test(lower)) return "introduction";
+  if (/conclusion|findings|result|结论|发现|结果/.test(lower)) return "conclusion";
+  if (/method|approach|implementation|方法|实现|实施/.test(lower)) return "methodology";
+  if (/table|figure|chart|图表|数据/.test(lower)) return "data_table";
+  if (/reference|bibliography|citation|参考|引用/.test(lower)) return "references";
+  if (/appendix|supplement|附录|补充/.test(lower)) return "appendix";
+  if (/contract|agreement|terms|clause|合同|条款|协议/.test(lower)) return "legal_clause";
+  if (/price|cost|revenue|financial|budget|价格|成本|收入|财务|预算/.test(lower)) return "financial_data";
+  if (/code|function|class|import|代码/.test(lower)) return "code_block";
+  if (/目录|contents|table of contents/.test(lower)) return "toc";
   return "body_text";
 }
 
 // ─── Generate CSP output from file ───
-async function generateCSP(file: File, markdown: string): Promise<CSPOutput> {
+async function generateCSP(
+  file: File,
+  markdown: string,
+  parseResult?: ParseResult
+): Promise<CSPOutput> {
   const arrayBuffer = await file.arrayBuffer();
   const checksum = await sha256(arrayBuffer);
   const docId = crypto.randomUUID();
@@ -169,7 +189,7 @@ async function generateCSP(file: File, markdown: string): Promise<CSPOutput> {
             level: currentSection.level,
             semantic_role: detectSemanticRole(content, currentSection.heading),
             confidence: 0.85 + Math.random() * 0.14,
-            content: content.slice(0, 500) + (content.length > 500 ? "..." : ""),
+            content: content.slice(0, 800) + (content.length > 800 ? "..." : ""),
             entities,
           });
           sectionIndex++;
@@ -183,7 +203,6 @@ async function generateCSP(file: File, markdown: string): Promise<CSPOutput> {
     } else if (currentSection) {
       currentSection.lines.push(line);
     } else if (line.trim()) {
-      // Content before first heading
       if (!currentSection) {
         currentSection = { heading: "Document", level: 1, lines: [line] };
       }
@@ -200,7 +219,7 @@ async function generateCSP(file: File, markdown: string): Promise<CSPOutput> {
         level: currentSection.level,
         semantic_role: detectSemanticRole(content, currentSection.heading),
         confidence: 0.85 + Math.random() * 0.14,
-        content: content.slice(0, 500) + (content.length > 500 ? "..." : ""),
+        content: content.slice(0, 800) + (content.length > 800 ? "..." : ""),
         entities,
       });
     }
@@ -222,8 +241,8 @@ async function generateCSP(file: File, markdown: string): Promise<CSPOutput> {
     blockHashes.push(hash.slice(0, 16));
   }
 
-  // Merkle root (simplified)
-  let merkleInput = blockHashes.join("");
+  // Merkle root
+  const merkleInput = blockHashes.join("");
   const merkleRoot = await sha256(encoder.encode(merkleInput).buffer as ArrayBuffer);
 
   const ext = file.name.split(".").pop()?.toLowerCase() || "unknown";
@@ -242,10 +261,11 @@ async function generateCSP(file: File, markdown: string): Promise<CSPOutput> {
         source_type: ext,
         checksum: `sha256:${checksum}`,
         content_length: markdown.length,
+        page_count: parseResult?.pageCount,
       },
       semantic: {
         title: file.name.replace(/\.[^.]+$/, ""),
-        language: "en",
+        language: parseResult?.metadata.languageHint || "en",
         sections: sections.map((s) => ({
           ...s,
           confidence: Math.round(s.confidence * 100) / 100,
@@ -259,35 +279,57 @@ async function generateCSP(file: File, markdown: string): Promise<CSPOutput> {
         timestamp: new Date().toISOString(),
       },
     },
+    engine: {
+      version: "0.2.0",
+      processing_time_ms: parseResult?.metadata.processingTimeMs || 0,
+      tables_detected: parseResult?.metadata.totalTables || 0,
+      total_lines: parseResult?.metadata.totalLines || 0,
+    },
   };
 }
 
-// ─── File conversion engine (same as before) ───
-async function convertFileToMarkdown(file: File): Promise<string> {
+// ─── File conversion engine v0.2 ───
+interface ConversionResult {
+  markdown: string;
+  parseResult?: ParseResult;
+}
+
+async function convertFileToMarkdown(file: File): Promise<ConversionResult> {
   const ext = file.name.split(".").pop()?.toLowerCase() || "";
   const type = file.type;
 
-  if (type.startsWith("text/") || ["txt", "md", "csv", "html", "htm", "rtf"].includes(ext)) {
-    const text = await file.text();
-    if (ext === "csv" || type === "text/csv") return convertCsvToMarkdown(text, file.name);
-    if (ext === "html" || ext === "htm" || type === "text/html") return convertHtmlToMarkdown(text, file.name);
-    if (ext === "md") return `<!-- Source: ${file.name} -->\n\n${text}`;
-    return `# ${file.name}\n\n${text}`;
+  // PDF: use v0.2 engine
+  if (ext === "pdf" || type === "application/pdf") {
+    const parseResult = await convertPdfToMarkdownV2(file);
+    return { markdown: parseResult.markdown, parseResult };
   }
 
+  // Text-based formats
+  if (type.startsWith("text/") || ["txt", "md", "csv", "html", "htm", "rtf"].includes(ext)) {
+    const text = await file.text();
+    if (ext === "csv" || type === "text/csv") return { markdown: convertCsvToMarkdown(text, file.name) };
+    if (ext === "html" || ext === "htm" || type === "text/html") return { markdown: convertHtmlToMarkdown(text, file.name) };
+    if (ext === "md") return { markdown: `<!-- Source: ${file.name} -->\n\n${text}` };
+    return { markdown: `# ${file.name}\n\n${text}` };
+  }
+
+  // JSON
   if (type === "application/json" || ext === "json") {
     const text = await file.text();
     try {
       const parsed = JSON.parse(text);
-      return `# ${file.name}\n\n\`\`\`json\n${JSON.stringify(parsed, null, 2)}\n\`\`\``;
+      return { markdown: `# ${file.name}\n\n\`\`\`json\n${JSON.stringify(parsed, null, 2)}\n\`\`\`` };
     } catch {
-      return `# ${file.name}\n\n\`\`\`\n${text}\n\`\`\``;
+      return { markdown: `# ${file.name}\n\n\`\`\`\n${text}\n\`\`\`` };
     }
   }
 
-  if (type.startsWith("image/")) return await convertImageToMarkdown(file);
-  if (ext === "pdf" || type === "application/pdf") return await convertPdfToMarkdown(file);
-  return generateBinaryFileMarkdown(file);
+  // Images
+  if (type.startsWith("image/") || ["png", "jpg", "jpeg", "webp", "gif", "bmp"].includes(ext)) {
+    return { markdown: await convertImageToMarkdown(file) };
+  }
+
+  return { markdown: generateBinaryFileMarkdown(file) };
 }
 
 function convertCsvToMarkdown(csv: string, filename: string): string {
@@ -331,6 +373,8 @@ function convertHtmlToMarkdown(html: string, filename: string): string {
       case "h2": return `\n## ${children.trim()}\n`;
       case "h3": return `\n### ${children.trim()}\n`;
       case "h4": return `\n#### ${children.trim()}\n`;
+      case "h5": return `\n##### ${children.trim()}\n`;
+      case "h6": return `\n###### ${children.trim()}\n`;
       case "p": return `\n${children.trim()}\n`;
       case "br": return "\n";
       case "strong": case "b": return `**${children.trim()}**`;
@@ -381,7 +425,7 @@ async function convertImageToMarkdown(file: File): Promise<string> {
           `| **Dimensions** | ${img.width} x ${img.height} px |`,
           `| **Last Modified** | ${new Date(file.lastModified).toISOString()} |`,
           "",
-          `> *Image loaded. For OCR text extraction, use the CLI version.*`,
+          `> *Image loaded. For OCR text extraction, use the CLI version with Tesseract integration.*`,
         ].join("\n"));
       };
       img.onerror = () => resolve(`# ${file.name}\n\n*Could not load image preview.*`);
@@ -389,29 +433,6 @@ async function convertImageToMarkdown(file: File): Promise<string> {
     };
     reader.readAsDataURL(file);
   });
-}
-
-async function convertPdfToMarkdown(file: File): Promise<string> {
-  try {
-    const arrayBuffer = await file.arrayBuffer();
-    const pdfjsLib = await import("pdfjs-dist");
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    const totalPages = pdf.numPages;
-    const pages: string[] = [];
-    for (let i = 1; i <= totalPages; i++) {
-      const page = await pdf.getPage(i);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items.map((item: any) => item.str).join(" ").replace(/\s+/g, " ").trim();
-      if (pageText) pages.push(`## Page ${i}\n\n${pageText}`);
-    }
-    if (pages.length === 0) {
-      return `# ${file.name}\n\n> *Scanned PDF without extractable text.*\n\n| Property | Value |\n| --- | --- |\n| **Pages** | ${totalPages} |\n| **Size** | ${formatFileSize(file.size)} |`;
-    }
-    return `# ${file.name}\n\n> *${totalPages} pages extracted*\n\n${pages.join("\n\n---\n\n")}`;
-  } catch {
-    return `# ${file.name}\n\n> *PDF extraction error. File may be encrypted or corrupted.*`;
-  }
 }
 
 function generateBinaryFileMarkdown(file: File): string {
@@ -443,11 +464,12 @@ export default function Converter() {
   const [files, setFiles] = useState<File[]>([]);
   const [markdownResults, setMarkdownResults] = useState<Map<string, string>>(new Map());
   const [cspResults, setCspResults] = useState<Map<string, CSPOutput>>(new Map());
+  const [parseResults, setParseResults] = useState<Map<string, ParseResult>>(new Map());
   const [converting, setConverting] = useState<Set<string>>(new Set());
   const [activeFile, setActiveFile] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [copied, setCopied] = useState(false);
-  const [outputMode, setOutputMode] = useState<"csp" | "markdown" | "raw">("csp");
+  const [outputMode, setOutputMode] = useState<"csp" | "markdown" | "raw">("markdown");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDrop = useCallback(
@@ -469,14 +491,24 @@ export default function Converter() {
       for (const file of newFiles) {
         setConverting((prev) => new Set(prev).add(file.name));
         try {
-          const markdown = await convertFileToMarkdown(file);
-          setMarkdownResults((prev) => new Map(prev).set(file.name, markdown));
-          const csp = await generateCSP(file, markdown);
+          const result = await convertFileToMarkdown(file);
+          setMarkdownResults((prev) => new Map(prev).set(file.name, result.markdown));
+          if (result.parseResult) {
+            setParseResults((prev) => new Map(prev).set(file.name, result.parseResult!));
+          }
+          const csp = await generateCSP(file, result.markdown, result.parseResult);
           setCspResults((prev) => new Map(prev).set(file.name, csp));
+          toast.success(`${file.name} processed`, {
+            description: result.parseResult
+              ? `${result.parseResult.pageCount} pages · ${result.parseResult.metadata.totalTables} tables · ${result.parseResult.metadata.processingTimeMs}ms`
+              : "Conversion complete",
+          });
         } catch (error) {
+          const errMsg = error instanceof Error ? error.message : "Unknown error";
           setMarkdownResults((prev) =>
-            new Map(prev).set(file.name, `# Error\n\nFailed to convert ${file.name}: ${error instanceof Error ? error.message : "Unknown error"}`)
+            new Map(prev).set(file.name, `# Error\n\nFailed to convert ${file.name}: ${errMsg}`)
           );
+          toast.error(`Failed to process ${file.name}`, { description: errMsg });
         } finally {
           setConverting((prev) => {
             const next = new Set(prev);
@@ -494,6 +526,7 @@ export default function Converter() {
       setFiles((prev) => prev.filter((f) => f.name !== filename));
       setMarkdownResults((prev) => { const next = new Map(prev); next.delete(filename); return next; });
       setCspResults((prev) => { const next = new Map(prev); next.delete(filename); return next; });
+      setParseResults((prev) => { const next = new Map(prev); next.delete(filename); return next; });
       if (activeFile === filename) setActiveFile(files.find((f) => f.name !== filename)?.name || null);
     },
     [activeFile, files]
@@ -556,6 +589,7 @@ export default function Converter() {
 
   const currentOutput = getActiveOutput();
   const currentCsp = activeFile ? cspResults.get(activeFile) : null;
+  const currentParseResult = activeFile ? parseResults.get(activeFile) : null;
   const isConverting = activeFile ? converting.has(activeFile) : false;
 
   return (
@@ -576,17 +610,17 @@ export default function Converter() {
               <h1 className="text-lg font-serif font-semibold tracking-tight text-foreground">
                 CSP Playground
               </h1>
-              <span className="text-[9px] font-mono text-primary/60 bg-accent/50 px-1.5 py-0.5 rounded">v1.0</span>
+              <span className="text-[9px] font-mono text-emerald-700 bg-emerald-50 border border-emerald-200/60 px-1.5 py-0.5 rounded">
+                v0.2
+              </span>
             </div>
           </div>
           <div className="flex items-center gap-2">
             {(markdownResults.size > 1 || cspResults.size > 1) && (
-              <>
-                <Button variant="outline" size="sm" onClick={downloadAll} className="text-xs bg-transparent">
-                  <Download className="w-3.5 h-3.5 mr-1.5" />
-                  Export All
-                </Button>
-              </>
+              <Button variant="outline" size="sm" onClick={downloadAll} className="text-xs bg-transparent">
+                <Download className="w-3.5 h-3.5 mr-1.5" />
+                Export All
+              </Button>
             )}
           </div>
         </div>
@@ -641,6 +675,7 @@ export default function Converter() {
                 const isActive = activeFile === file.name;
                 const isFileConverting = converting.has(file.name);
                 const isDone = markdownResults.has(file.name);
+                const fileParse = parseResults.get(file.name);
 
                 return (
                   <motion.div
@@ -665,7 +700,12 @@ export default function Converter() {
                       <p className="text-xs text-muted-foreground">
                         {info.label} · {formatFileSize(file.size)}
                         {isDone && !isFileConverting && (
-                          <span className="text-primary"> · CSP Ready</span>
+                          <span className="text-emerald-600"> · Ready</span>
+                        )}
+                        {fileParse && (
+                          <span className="text-muted-foreground/60">
+                            {" "}· {fileParse.metadata.processingTimeMs}ms
+                          </span>
                         )}
                       </p>
                     </div>
@@ -685,7 +725,7 @@ export default function Converter() {
                 <Layers className="w-10 h-10 text-muted-foreground/40 mb-3" />
                 <p className="text-sm text-muted-foreground">No files yet</p>
                 <p className="text-xs text-muted-foreground/60 mt-1">
-                  Drop documents to generate CSP output
+                  Drop documents to generate structured output
                 </p>
               </div>
             )}
@@ -696,21 +736,43 @@ export default function Converter() {
         <div className="flex-1 flex flex-col min-h-0">
           {activeFile && currentOutput ? (
             <>
+              {/* Quality Metrics Bar (for PDFs with parse results) */}
+              {currentParseResult && (
+                <div className="border-b border-border/30 bg-emerald-50/30 px-4 py-2">
+                  <div className="flex items-center gap-4 text-xs">
+                    <div className="flex items-center gap-1.5 text-emerald-700">
+                      <Zap className="w-3 h-3" />
+                      <span className="font-mono font-medium">v0.2 Engine</span>
+                    </div>
+                    <div className="w-px h-3.5 bg-emerald-200" />
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      <Clock className="w-3 h-3" />
+                      <span className="font-mono">{currentParseResult.metadata.processingTimeMs}ms</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      <FileText className="w-3 h-3" />
+                      <span className="font-mono">{currentParseResult.pageCount} pages</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      <BarChart3 className="w-3 h-3" />
+                      <span className="font-mono">{currentParseResult.metadata.totalLines} lines</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      <Table className="w-3 h-3" />
+                      <span className="font-mono">{currentParseResult.metadata.totalTables} tables</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-muted-foreground">
+                      <Globe className="w-3 h-3" />
+                      <span className="font-mono">{currentParseResult.metadata.languageHint}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Output Header */}
               <div className="border-b border-border/50 bg-background/60 backdrop-blur-sm px-4 py-2.5">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setOutputMode("csp")}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
-                        outputMode === "csp"
-                          ? "bg-primary/10 text-primary border border-primary/20"
-                          : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
-                      }`}
-                    >
-                      <Layers className="w-3 h-3" />
-                      CSP Output
-                    </button>
                     <button
                       onClick={() => setOutputMode("markdown")}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
@@ -721,6 +783,17 @@ export default function Converter() {
                     >
                       <FileText className="w-3 h-3" />
                       Markdown
+                    </button>
+                    <button
+                      onClick={() => setOutputMode("csp")}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                        outputMode === "csp"
+                          ? "bg-primary/10 text-primary border border-primary/20"
+                          : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
+                      }`}
+                    >
+                      <Layers className="w-3 h-3" />
+                      CSP Output
                     </button>
                     <button
                       onClick={() => setOutputMode("raw")}
@@ -766,8 +839,8 @@ export default function Converter() {
             <div className="flex-1 flex items-center justify-center">
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center">
                 <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground">Processing through CSP layers...</p>
-                <p className="text-xs text-muted-foreground/60 mt-1">Extracting → Structuring → Verifying</p>
+                <p className="text-sm text-muted-foreground">Processing with v0.2 engine...</p>
+                <p className="text-xs text-muted-foreground/60 mt-1">Structure → Tables → Text Repair → Assembly</p>
               </motion.div>
             </div>
           ) : (
@@ -777,9 +850,15 @@ export default function Converter() {
                   <Layers className="w-7 h-7 text-muted-foreground/50" />
                 </div>
                 <h3 className="font-serif text-lg text-foreground mb-2">CSP Playground</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Drop documents on the left panel. CleanSlate will process them through the three-layer protocol — producing structured, verifiable, AI-native output.
+                <p className="text-sm text-muted-foreground leading-relaxed mb-3">
+                  Drop documents on the left panel. The v0.2 engine processes PDFs through four phases: structure detection, table extraction, text repair, and assembly.
                 </p>
+                <div className="flex flex-wrap justify-center gap-2 text-[10px] font-mono text-muted-foreground/60">
+                  <span className="bg-secondary/50 px-2 py-0.5 rounded">Font-size headings</span>
+                  <span className="bg-secondary/50 px-2 py-0.5 rounded">Spatial tables</span>
+                  <span className="bg-secondary/50 px-2 py-0.5 rounded">CJK repair</span>
+                  <span className="bg-secondary/50 px-2 py-0.5 rounded">OCR cleanup</span>
+                </div>
               </div>
             </div>
           )}
@@ -815,10 +894,19 @@ function CSPViewer({ csp }: { csp: CSPOutput }) {
             <p className="font-mono font-medium text-foreground">{csp.layers.semantic.sections.length}</p>
           </div>
           <div>
-            <span className="text-muted-foreground">Doc ID</span>
-            <p className="font-mono font-medium text-foreground truncate">{csp.document_id.slice(0, 8)}...</p>
+            <span className="text-muted-foreground">Language</span>
+            <p className="font-mono font-medium text-foreground">{csp.layers.semantic.language}</p>
           </div>
         </div>
+        {/* Engine info */}
+        {csp.engine && (
+          <div className="mt-3 pt-3 border-t border-border/30 flex items-center gap-4 text-[10px] font-mono text-muted-foreground/70">
+            <span>Engine v{csp.engine.version}</span>
+            <span>{csp.engine.processing_time_ms}ms</span>
+            <span>{csp.engine.tables_detected} tables</span>
+            <span>{csp.engine.total_lines} lines</span>
+          </div>
+        )}
       </div>
 
       {/* Layer 1: Raw */}
@@ -839,8 +927,8 @@ function CSPViewer({ csp }: { csp: CSPOutput }) {
             <p className="font-mono text-amber-900">{csp.layers.raw.content_length.toLocaleString()} chars</p>
           </div>
           <div>
-            <span className="text-amber-700/60">Source Type</span>
-            <p className="font-mono text-amber-900">{csp.layers.raw.source_type}</p>
+            <span className="text-amber-700/60">Pages</span>
+            <p className="font-mono text-amber-900">{csp.layers.raw.page_count || "N/A"}</p>
           </div>
         </div>
       </div>
@@ -875,7 +963,7 @@ function CSPViewer({ csp }: { csp: CSPOutput }) {
                   {section.semantic_role}
                 </span>
                 <span className="text-[10px] font-mono text-blue-400 ml-auto">
-                  confidence: {section.confidence.toFixed(2)}
+                  L{section.level} · {section.confidence.toFixed(2)}
                 </span>
               </div>
               <p className="text-xs text-blue-900/80 leading-relaxed line-clamp-3">
@@ -943,26 +1031,27 @@ function MarkdownPreview({ content }: { content: string }) {
   const elements: React.ReactNode[] = [];
   let inCodeBlock = false;
   let codeContent = "";
+  let codeLang = "";
   let inTable = false;
   let tableRows: string[][] = [];
 
   const flushTable = () => {
     if (tableRows.length > 0) {
       elements.push(
-        <div key={`table-${elements.length}`} className="overflow-x-auto my-4">
+        <div key={`table-${elements.length}`} className="overflow-x-auto my-4 border border-border/40 rounded-lg">
           <table className="min-w-full text-sm border-collapse">
             <thead>
-              <tr className="border-b-2 border-border">
+              <tr className="bg-secondary/40">
                 {tableRows[0].map((cell, i) => (
-                  <th key={i} className="px-3 py-2 text-left font-semibold text-foreground">{renderInline(cell)}</th>
+                  <th key={i} className="px-3 py-2 text-left font-semibold text-foreground border-b border-border/50 whitespace-nowrap">{renderInline(cell)}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {tableRows.slice(1).map((row, ri) => (
-                <tr key={ri} className="border-b border-border/50">
+                <tr key={ri} className={ri % 2 === 0 ? "" : "bg-secondary/20"}>
                   {row.map((cell, ci) => (
-                    <td key={ci} className="px-3 py-2 text-foreground/80">{renderInline(cell)}</td>
+                    <td key={ci} className="px-3 py-2 text-foreground/80 border-b border-border/30 whitespace-nowrap">{renderInline(cell)}</td>
                   ))}
                 </tr>
               ))}
@@ -980,13 +1069,25 @@ function MarkdownPreview({ content }: { content: string }) {
     if (line.startsWith("```")) {
       if (inCodeBlock) {
         elements.push(
-          <pre key={`code-${i}`} className="bg-secondary/80 rounded-md p-4 my-3 overflow-x-auto text-sm font-mono text-foreground/80">
-            {codeContent.trim()}
-          </pre>
+          <div key={`code-${i}`} className="my-3 rounded-lg overflow-hidden border border-border/40">
+            {codeLang && (
+              <div className="bg-secondary/60 px-3 py-1 text-[10px] font-mono text-muted-foreground border-b border-border/30">
+                {codeLang}
+              </div>
+            )}
+            <pre className="bg-secondary/30 p-4 overflow-x-auto text-sm font-mono text-foreground/80">
+              {codeContent.trim()}
+            </pre>
+          </div>
         );
         codeContent = "";
+        codeLang = "";
         inCodeBlock = false;
-      } else { flushTable(); inCodeBlock = true; }
+      } else {
+        flushTable();
+        inCodeBlock = true;
+        codeLang = line.slice(3).trim();
+      }
       continue;
     }
     if (inCodeBlock) { codeContent += line + "\n"; continue; }
@@ -999,8 +1100,11 @@ function MarkdownPreview({ content }: { content: string }) {
     } else if (inTable) { flushTable(); }
 
     if (line.startsWith("# ")) elements.push(<h1 key={i} className="text-2xl font-serif font-bold mt-6 mb-3 text-foreground">{renderInline(line.slice(2))}</h1>);
-    else if (line.startsWith("## ")) elements.push(<h2 key={i} className="text-xl font-serif font-semibold mt-5 mb-2 text-foreground">{renderInline(line.slice(3))}</h2>);
+    else if (line.startsWith("## ")) elements.push(<h2 key={i} className="text-xl font-serif font-semibold mt-5 mb-2 text-foreground border-b border-border/30 pb-1">{renderInline(line.slice(3))}</h2>);
     else if (line.startsWith("### ")) elements.push(<h3 key={i} className="text-lg font-serif font-semibold mt-4 mb-2 text-foreground">{renderInline(line.slice(4))}</h3>);
+    else if (line.startsWith("#### ")) elements.push(<h4 key={i} className="text-base font-sans font-semibold mt-3 mb-1.5 text-foreground">{renderInline(line.slice(5))}</h4>);
+    else if (line.startsWith("##### ")) elements.push(<h5 key={i} className="text-sm font-sans font-semibold mt-3 mb-1 text-foreground">{renderInline(line.slice(6))}</h5>);
+    else if (line.startsWith("###### ")) elements.push(<h6 key={i} className="text-sm font-sans font-medium mt-2 mb-1 text-muted-foreground">{renderInline(line.slice(7))}</h6>);
     else if (line.startsWith("> ")) elements.push(<blockquote key={i} className="border-l-3 border-primary/40 pl-4 my-3 text-muted-foreground italic">{renderInline(line.slice(2))}</blockquote>);
     else if (line === "---" || line === "***") elements.push(<hr key={i} className="my-4 border-border/50" />);
     else if (line.match(/^[-*] /)) elements.push(<div key={i} className="flex gap-2 my-0.5 ml-2"><span className="text-primary mt-1.5 text-xs">•</span><span className="text-foreground/80 text-sm">{renderInline(line.slice(2))}</span></div>);
