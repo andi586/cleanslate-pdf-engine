@@ -21,6 +21,7 @@
   <a href="#-architecture">Architecture</a> •
   <a href="#-installation">Installation</a> •
   <a href="#-usage">Usage</a> •
+  <a href="#-ai-agent-integration">AI Agent Integration</a> •
   <a href="#-roadmap">Roadmap</a> •
   <a href="#-license">License</a> •
   <a href="#-author">Author</a>
@@ -207,6 +208,16 @@ cleanslate-pdf-engine/
 ├── shared/
 │   └── const.ts                    # Shared constants
 │
+├── schema/
+│   └── csp_schema_v1.json          # ★ CSP v1.0 JSON Schema definition
+│
+├── examples/
+│   └── agent_pipeline/             # AI Agent integration example
+│       ├── README.md               # Pipeline documentation
+│       ├── csp_output.json         # Example CSP output
+│       ├── agent_prompt.md         # Agent system prompt template
+│       └── agent_response.json     # Example agent response
+│
 ├── README.md                       # This file
 ├── LICENSE                         # MIT License
 ├── CONTRIBUTING.md                 # Contribution guidelines
@@ -226,6 +237,8 @@ cleanslate-pdf-engine/
 | **CSP Playground** | `client/src/pages/Converter.tsx` | Interactive document converter with drag-and-drop, real-time preview, three output modes (CSP/Markdown/Raw JSON), quality metrics display. |
 | **Protocol Landing** | `client/src/pages/Home.tsx` | Product landing page showcasing the 3-layer protocol, code examples, ecosystem integrations, competitive comparison. |
 | **Design System** | `client/src/index.css` | Wabi-Sabi inspired theme — warm white (#FAFAF5) + deep ink (#1A1A2E) + indigo (#16537E). Playfair Display + Source Sans 3 + Fira Code. |
+| **CSP Schema** | `schema/csp_schema_v1.json` | The canonical JSON Schema definition for CSP v1.0 — defines document, metadata, content, and verification layers. |
+| **Agent Pipeline** | `examples/agent_pipeline/` | End-to-end example: PDF → CSP Schema → AI Agent → Structured Response. Includes prompt templates and sample outputs. |
 | **UI Components** | `client/src/components/ui/` | Full shadcn/ui component library (40+ components) for consistent, accessible interface elements. |
 
 ### Future Expansion Direction
@@ -373,7 +386,117 @@ print(result.verification.checksum)  # "sha256:..."
 
 ---
 
-## 6. Roadmap
+## 6. AI Agent Integration
+
+CleanSlate Protocol is designed from the ground up as the **document input standard for AI agents**. Rather than feeding raw text or fragile Markdown to your LLM pipeline, CSP provides a structured, verified, semantically-annotated document format that agents can consume with confidence.
+
+### Pipeline Architecture
+
+```
+┌───────────────────────────────────────────────────────────────────────┐
+│                    AI Agent Document Pipeline                         │
+│                                                                       │
+│  ┌─────────────┐     ┌──────────────────┐     ┌──────────────────┐   │
+│  │  Document    │     │  CleanSlate      │     │  AI Agent        │   │
+│  │  Sources     │────▶│  Parser          │────▶│  (LLM Pipeline)  │   │
+│  │             │     │                  │     │                  │   │
+│  │  • PDF      │     │  • Structure     │     │  • LangChain     │   │
+│  │  • DOCX     │     │  • Semantics     │     │  • LlamaIndex    │   │
+│  │  • XLSX     │     │  • Verification  │     │  • AutoGen       │   │
+│  │  • HTML     │     │                  │     │  • CrewAI        │   │
+│  │  • CSV      │     │                  │     │  • Custom Agent  │   │
+│  └─────────────┘     └────────┬─────────┘     └────────┬─────────┘   │
+│                               │                         │             │
+│                               ▼                         ▼             │
+│                  ┌──────────────────────┐  ┌──────────────────────┐   │
+│                  │  CSP Schema v1.0     │  │  Structured          │   │
+│                  │  (Verified JSON)     │  │  Response             │   │
+│                  │                      │  │                      │   │
+│                  │  • document          │  │  • Key metrics       │   │
+│                  │  • metadata          │  │  • Insights          │   │
+│                  │  • content           │  │  • Recommendations   │   │
+│                  │  • verification      │  │  • Citations (→ s3)  │   │
+│                  └──────────────────────┘  └──────────────────────┘   │
+│                                                                       │
+└───────────────────────────────────────────────────────────────────────┘
+```
+
+### How It Works
+
+The integration follows a three-step flow that transforms any document into agent-consumable structured data:
+
+**Step 1 — Document Ingestion**: Source documents (PDF, DOCX, XLSX, etc.) are fed into the CleanSlate Parser. This can happen in the browser via the CSP Playground, or programmatically via the upcoming SDK.
+
+**Step 2 — CSP Standardization**: The parser produces a CSP v1.0 JSON output containing four top-level objects: `document` (source identification and checksum), `metadata` (title, author, language, keywords), `content` (semantically-annotated sections with confidence scores and extracted entities), and `verification` (Merkle hash tree and Ed25519 signature).
+
+**Step 3 — Agent Consumption**: The AI Agent receives the CSP JSON as its input. Because the data is structured and verified, the agent can directly reference specific sections by ID (e.g., `s3`, `s5`), trust the integrity of financial figures, and produce citations that trace back to the source document.
+
+### CSP Schema Definition
+
+The formal schema is defined in [`schema/csp_schema_v1.json`](schema/csp_schema_v1.json). The four required top-level objects are:
+
+| Object | Purpose | Key Fields |
+|--------|---------|------------|
+| `document` | Source identification and integrity | `id` (UUID), `source_type`, `filename`, `checksum` (SHA-256) |
+| `metadata` | Extracted document metadata | `title`, `author`, `language`, `keywords`, `creation_date` |
+| `content` | Structured semantic content | `sections[]` with `type`, `semantic_role`, `confidence`, `entities[]` |
+| `verification` | Cryptographic integrity proof | `hash_tree` (Merkle), `block_hashes[]`, `signature` (Ed25519), `timestamp` |
+
+### Example: Financial Report → AI Agent
+
+A complete end-to-end example is available in [`examples/agent_pipeline/`](examples/agent_pipeline/). The example demonstrates:
+
+1. A Q4 2025 Financial Report (PDF) is parsed into CSP format ([`csp_output.json`](examples/agent_pipeline/csp_output.json))
+2. A Financial Analyst Agent receives the CSP data with a structured system prompt ([`agent_prompt.md`](examples/agent_pipeline/agent_prompt.md))
+3. The agent produces a structured analysis with key metrics, insights, risk factors, and recommendations — all with section-level citations ([`agent_response.json`](examples/agent_pipeline/agent_response.json))
+
+### Why CSP Over Raw Text?
+
+Traditional document-to-LLM pipelines suffer from fundamental limitations that CSP resolves:
+
+| Problem | Raw Text / Markdown | CSP Protocol |
+|---------|--------------------|--------------|
+| **Structure loss** | Headings, tables, hierarchy lost | Full semantic structure preserved |
+| **No verification** | Agent cannot verify data integrity | SHA-256 + Merkle hash tree |
+| **No semantics** | LLM must guess section roles | Explicit `semantic_role` annotations |
+| **No confidence** | All data treated equally | Per-section `confidence` scores |
+| **No entities** | Agent must extract entities itself | Pre-extracted `entities[]` with types |
+| **No citations** | Cannot trace back to source | Section IDs enable precise citations |
+| **No audit trail** | No proof of what was parsed | Ed25519 signatures + timestamps |
+
+### Framework Integration (Coming Soon)
+
+```python
+# LangChain integration
+from cleanslate.langchain import CSPDocumentLoader
+
+loader = CSPDocumentLoader("report.pdf")
+docs = loader.load()  # Returns CSP-structured LangChain Documents
+
+# Each document has verified metadata and semantic sections
+for doc in docs:
+    print(doc.metadata["semantic_role"])  # "financial_data"
+    print(doc.metadata["confidence"])     # 0.95
+    print(doc.metadata["verification"])   # Merkle hash proof
+```
+
+```python
+# LlamaIndex integration
+from cleanslate.llamaindex import CSPReader
+
+reader = CSPReader()
+documents = reader.load_data("report.pdf")
+
+# Build index with verified, structured documents
+index = VectorStoreIndex.from_documents(documents)
+query_engine = index.as_query_engine()
+response = query_engine.query("What was Q4 revenue?")
+# Response includes section-level citations from CSP
+```
+
+---
+
+## 7. Roadmap
 
 For the complete roadmap with timelines and milestones, see [ROADMAP.md](ROADMAP.md).
 

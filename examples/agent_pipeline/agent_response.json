@@ -1,0 +1,66 @@
+{
+  "agent": "financial_analyst_v1",
+  "source_document": "a3f8c2e1-7b4d-4e9a-b6c3-d5f0e8a2b1c4",
+  "analysis_timestamp": "2026-03-04T10:31:15Z",
+  "verification_status": "verified",
+
+  "key_metrics": {
+    "total_revenue": {
+      "value": "$142.8M",
+      "period": "Q4 2025",
+      "yoy_change": "+23%",
+      "source_section": "s3",
+      "confidence": 0.98
+    },
+    "ebitda_margin": {
+      "value": "31.2%",
+      "period": "Q4 2025",
+      "source_section": "s3",
+      "confidence": 0.98
+    },
+    "top_growth_segment": {
+      "segment": "AI Products",
+      "revenue": "$18.7M",
+      "yoy_change": "+122.6%",
+      "source_section": "s5",
+      "confidence": 0.97
+    }
+  },
+
+  "revenue_breakdown": [
+    { "segment": "Cloud Services", "q4_2025": "$68.2M", "q4_2024": "$52.1M", "yoy": "+30.9%", "share": "47.8%" },
+    { "segment": "Enterprise Software", "q4_2025": "$45.3M", "q4_2024": "$39.8M", "yoy": "+13.8%", "share": "31.7%" },
+    { "segment": "AI Products", "q4_2025": "$18.7M", "q4_2024": "$8.4M", "yoy": "+122.6%", "share": "13.1%" },
+    { "segment": "Professional Services", "q4_2025": "$10.6M", "q4_2024": "$15.8M", "yoy": "-32.9%", "share": "7.4%" }
+  ],
+
+  "insights": [
+    {
+      "type": "growth_driver",
+      "title": "AI Products segment is the primary growth engine",
+      "detail": "AI Products revenue grew 122.6% YoY, from $8.4M to $18.7M. This is the fastest-growing segment and is projected to exceed $100M annual revenue by Q3 2026.",
+      "source_sections": ["s5", "s7"],
+      "confidence": 0.96
+    },
+    {
+      "type": "risk_factor",
+      "title": "Professional Services decline requires attention",
+      "detail": "Professional Services revenue declined 32.9% YoY, from $15.8M to $10.6M. This is the only segment showing negative growth and may indicate a strategic shift away from services toward product revenue.",
+      "source_sections": ["s5"],
+      "confidence": 0.93
+    },
+    {
+      "type": "forward_guidance",
+      "title": "Management projects 18-24% growth for FY2026",
+      "detail": "Full-year 2026 revenue guidance is $620M–$650M. The wide range (6% spread) suggests uncertainty, likely tied to AI Products adoption pace.",
+      "source_sections": ["s7"],
+      "confidence": 0.92
+    }
+  ],
+
+  "recommendation": {
+    "rating": "positive",
+    "summary": "Strong Q4 results driven by Cloud and AI Products growth. The Professional Services decline is a concern but appears to be a deliberate strategic pivot. Forward guidance of 18-24% growth is achievable given current momentum.",
+    "confidence": 0.91
+  }
+}

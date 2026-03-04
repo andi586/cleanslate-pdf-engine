@@ -1,0 +1,251 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cleanslate-protocol.org/schema/csp/v1.0",
+  "title": "CleanSlate Protocol (CSP) v1.0 Schema",
+  "description": "The canonical JSON Schema for CleanSlate Protocol — an AI-native document standardization format designed as the universal input layer for AI agents, LLM pipelines, and RAG systems.",
+  "type": "object",
+  "required": ["csp_version", "document", "metadata", "content", "verification"],
+  "properties": {
+    "csp_version": {
+      "type": "string",
+      "const": "1.0",
+      "description": "Protocol version identifier. Must be '1.0' for this schema."
+    },
+
+    "document": {
+      "type": "object",
+      "description": "Document-level identification and source tracking.",
+      "required": ["id", "source_type", "filename", "size_bytes", "checksum"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "format": "uuid",
+          "description": "Unique document identifier (UUID v4)."
+        },
+        "source_type": {
+          "type": "string",
+          "enum": ["pdf", "docx", "xlsx", "pptx", "html", "csv", "txt", "json", "png", "jpeg", "md"],
+          "description": "Original file format of the source document."
+        },
+        "filename": {
+          "type": "string",
+          "description": "Original filename including extension."
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "File size in bytes."
+        },
+        "checksum": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "SHA-256 hash of the original file content, prefixed with 'sha256:'."
+        },
+        "page_count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Total number of pages (for paginated formats like PDF, PPTX)."
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of when the CSP output was generated."
+        }
+      }
+    },
+
+    "metadata": {
+      "type": "object",
+      "description": "Extracted and inferred document metadata.",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Document title, extracted from content or metadata."
+        },
+        "author": {
+          "type": "string",
+          "description": "Document author, if available."
+        },
+        "language": {
+          "type": "string",
+          "description": "Primary language of the document (ISO 639-1 code, e.g., 'en', 'zh', 'ja')."
+        },
+        "subject": {
+          "type": "string",
+          "description": "Document subject or topic summary."
+        },
+        "keywords": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Extracted or inferred keywords."
+        },
+        "creation_date": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Original document creation date, if available from file metadata."
+        },
+        "modification_date": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last modification date, if available from file metadata."
+        },
+        "producer": {
+          "type": "string",
+          "description": "Software that produced the original document."
+        }
+      }
+    },
+
+    "content": {
+      "type": "object",
+      "description": "The core structured content of the document, organized into semantic sections.",
+      "required": ["sections"],
+      "properties": {
+        "sections": {
+          "type": "array",
+          "description": "Ordered list of document sections with semantic role annotations.",
+          "items": {
+            "type": "object",
+            "required": ["id", "type", "content"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^s[0-9]+$",
+                "description": "Unique section identifier within the document (e.g., 's1', 's2')."
+              },
+              "type": {
+                "type": "string",
+                "enum": ["heading", "paragraph", "table", "list", "code", "image", "blockquote", "separator", "page_break"],
+                "description": "Semantic type of the section."
+              },
+              "level": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 6,
+                "description": "Heading level (1-6). Only applicable when type is 'heading'."
+              },
+              "content": {
+                "type": "string",
+                "description": "The text content of the section. For tables, this is Markdown table format. For code blocks, this is the raw code."
+              },
+              "semantic_role": {
+                "type": "string",
+                "enum": [
+                  "title", "subtitle", "abstract", "summary",
+                  "introduction", "conclusion", "methodology",
+                  "results", "discussion", "references",
+                  "table_of_contents", "appendix",
+                  "header", "footer", "footnote",
+                  "caption", "annotation",
+                  "contract_clause", "financial_data",
+                  "code_block", "equation",
+                  "generic"
+                ],
+                "description": "High-level semantic role of the section within the document context."
+              },
+              "confidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Confidence score (0-1) for the structural classification of this section."
+              },
+              "page": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Source page number where this section originates."
+              },
+              "entities": {
+                "type": "array",
+                "description": "Named entities extracted from this section.",
+                "items": {
+                  "type": "object",
+                  "required": ["type", "value"],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": ["person", "organization", "location", "date", "metric", "currency", "percentage", "email", "url", "phone", "custom"],
+                      "description": "Entity type classification."
+                    },
+                    "value": {
+                      "type": "string",
+                      "description": "The extracted entity value."
+                    },
+                    "context": {
+                      "type": "string",
+                      "description": "Contextual label for the entity (e.g., 'total_revenue', 'ceo_name')."
+                    },
+                    "confidence": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1,
+                      "description": "Confidence score for entity extraction."
+                    }
+                  }
+                }
+              },
+              "children": {
+                "type": "array",
+                "description": "Nested sub-sections (for hierarchical document structures).",
+                "items": { "$ref": "#/properties/content/properties/sections/items" }
+              }
+            }
+          }
+        },
+        "raw_text": {
+          "type": "string",
+          "description": "Complete raw text extraction of the document (Layer 1 output)."
+        },
+        "page_map": {
+          "type": "array",
+          "description": "Character offset mapping for each page.",
+          "items": {
+            "type": "object",
+            "required": ["page", "char_start", "char_end"],
+            "properties": {
+              "page": { "type": "integer", "minimum": 1 },
+              "char_start": { "type": "integer", "minimum": 0 },
+              "char_end": { "type": "integer", "minimum": 0 }
+            }
+          }
+        }
+      }
+    },
+
+    "verification": {
+      "type": "object",
+      "description": "Cryptographic verification layer for data integrity and auditability.",
+      "required": ["hash_tree", "protocol_version", "timestamp"],
+      "properties": {
+        "hash_tree": {
+          "type": "string",
+          "pattern": "^merkle:sha256:root:[a-f0-9]{64}$",
+          "description": "Merkle tree root hash for content integrity verification."
+        },
+        "block_hashes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          },
+          "description": "Individual SHA-256 hashes for each content section (leaf nodes of Merkle tree)."
+        },
+        "signature": {
+          "type": "string",
+          "description": "Ed25519 digital signature of the hash_tree root (optional, for signed outputs)."
+        },
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp of when verification was computed."
+        },
+        "protocol_version": {
+          "type": "string",
+          "const": "csp-1.0",
+          "description": "Protocol version used for verification computation."
+        }
+      }
+    }
+  },
+
+  "additionalProperties": false
+}

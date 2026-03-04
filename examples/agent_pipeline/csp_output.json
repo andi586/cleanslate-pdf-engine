@@ -1,0 +1,132 @@
+{
+  "csp_version": "1.0",
+
+  "document": {
+    "id": "a3f8c2e1-7b4d-4e9a-b6c3-d5f0e8a2b1c4",
+    "source_type": "pdf",
+    "filename": "Q4_2025_Financial_Report.pdf",
+    "size_bytes": 2458624,
+    "checksum": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "page_count": 12,
+    "created_at": "2026-03-04T10:30:00Z"
+  },
+
+  "metadata": {
+    "title": "Q4 2025 Financial Report — Acme Corporation",
+    "author": "Acme Finance Department",
+    "language": "en",
+    "subject": "Quarterly financial performance report",
+    "keywords": ["financial report", "Q4 2025", "revenue", "EBITDA", "forecast"],
+    "creation_date": "2026-01-15T09:00:00Z",
+    "producer": "Microsoft Word 2025"
+  },
+
+  "content": {
+    "sections": [
+      {
+        "id": "s1",
+        "type": "heading",
+        "level": 1,
+        "content": "Q4 2025 Financial Report",
+        "semantic_role": "title",
+        "confidence": 0.99,
+        "page": 1,
+        "entities": []
+      },
+      {
+        "id": "s2",
+        "type": "heading",
+        "level": 2,
+        "content": "Executive Summary",
+        "semantic_role": "summary",
+        "confidence": 0.97,
+        "page": 1,
+        "entities": []
+      },
+      {
+        "id": "s3",
+        "type": "paragraph",
+        "content": "Acme Corporation delivered strong Q4 2025 results, with total revenue reaching $142.8M, representing a 23% year-over-year increase. EBITDA margin improved to 31.2%, driven by operational efficiency gains and the successful launch of the AI-powered product line.",
+        "semantic_role": "summary",
+        "confidence": 0.95,
+        "page": 1,
+        "entities": [
+          { "type": "organization", "value": "Acme Corporation", "context": "reporting_entity", "confidence": 0.99 },
+          { "type": "currency", "value": "$142.8M", "context": "total_revenue", "confidence": 0.98 },
+          { "type": "percentage", "value": "23%", "context": "yoy_growth", "confidence": 0.97 },
+          { "type": "percentage", "value": "31.2%", "context": "ebitda_margin", "confidence": 0.98 }
+        ]
+      },
+      {
+        "id": "s4",
+        "type": "heading",
+        "level": 2,
+        "content": "Revenue Breakdown",
+        "semantic_role": "financial_data",
+        "confidence": 0.96,
+        "page": 3,
+        "entities": []
+      },
+      {
+        "id": "s5",
+        "type": "table",
+        "content": "| Business Unit | Q4 2025 | Q4 2024 | YoY Change |\n|---|---|---|---|\n| Cloud Services | $68.2M | $52.1M | +30.9% |\n| Enterprise Software | $45.3M | $39.8M | +13.8% |\n| AI Products | $18.7M | $8.4M | +122.6% |\n| Professional Services | $10.6M | $15.8M | -32.9% |",
+        "semantic_role": "financial_data",
+        "confidence": 0.93,
+        "page": 3,
+        "entities": [
+          { "type": "currency", "value": "$68.2M", "context": "cloud_services_revenue", "confidence": 0.97 },
+          { "type": "currency", "value": "$45.3M", "context": "enterprise_software_revenue", "confidence": 0.97 },
+          { "type": "currency", "value": "$18.7M", "context": "ai_products_revenue", "confidence": 0.97 },
+          { "type": "currency", "value": "$10.6M", "context": "professional_services_revenue", "confidence": 0.97 }
+        ]
+      },
+      {
+        "id": "s6",
+        "type": "heading",
+        "level": 2,
+        "content": "2026 Outlook",
+        "semantic_role": "conclusion",
+        "confidence": 0.94,
+        "page": 10,
+        "entities": []
+      },
+      {
+        "id": "s7",
+        "type": "paragraph",
+        "content": "Management projects full-year 2026 revenue in the range of $620M–$650M, representing 18–24% growth. The company expects continued momentum in AI Products, with the segment projected to exceed $100M in annual revenue by Q3 2026.",
+        "semantic_role": "conclusion",
+        "confidence": 0.92,
+        "page": 10,
+        "entities": [
+          { "type": "currency", "value": "$620M–$650M", "context": "fy2026_revenue_guidance", "confidence": 0.96 },
+          { "type": "percentage", "value": "18–24%", "context": "projected_growth", "confidence": 0.95 },
+          { "type": "currency", "value": "$100M", "context": "ai_products_target", "confidence": 0.94 },
+          { "type": "date", "value": "Q3 2026", "context": "ai_target_date", "confidence": 0.96 }
+        ]
+      }
+    ],
+    "raw_text": "Q4 2025 Financial Report\n\nExecutive Summary\n\nAcme Corporation delivered strong Q4 2025 results, with total revenue reaching $142.8M...",
+    "page_map": [
+      { "page": 1, "char_start": 0, "char_end": 1842 },
+      { "page": 3, "char_start": 1843, "char_end": 4210 },
+      { "page": 10, "char_start": 8450, "char_end": 10120 }
+    ]
+  },
+
+  "verification": {
+    "hash_tree": "merkle:sha256:root:7d865e959b2466918c9863afca942d0fb89d7c9ac0c99bafc3749504ded97730",
+    "block_hashes": [
+      "sha256:a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
+      "sha256:b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3",
+      "sha256:c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4",
+      "sha256:d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5",
+      "sha256:e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6",
+      "sha256:f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7",
+      "sha256:a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8"
+    ],
+    "signature": "ed25519:base64:SGVsbG8gV29ybGQhIFRoaXMgaXMgYSBzYW1wbGUgc2lnbmF0dXJl",
+    "timestamp": "2026-03-04T10:30:01Z",
+    "protocol_version": "csp-1.0"
+  }
+}
