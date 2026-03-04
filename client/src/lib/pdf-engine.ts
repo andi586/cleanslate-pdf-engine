@@ -812,6 +812,7 @@ export async function convertPdfToMarkdownV2(file: File): Promise<ParseResult> {
 
   const arrayBuffer = await file.arrayBuffer();
   const pdfjsLib = await import("pdfjs-dist");
+  // Use CDN worker matching installed version
   pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
